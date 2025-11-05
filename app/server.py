@@ -52,6 +52,14 @@ class PredictResponse(BaseModel):
         }
     }
 
+class VersionRequest(BaseModel):
+    model_version: str
+
+class ModelResponse(BaseModel):
+    model_name: str  
+    model_version: str
+    model_uri: str
+
 app = FastAPI(
     title="Iris Classifier API",
     description="Predict Iris species from sepal/petal measurements (cm).",
@@ -70,6 +78,19 @@ def health():
     description="Send one or more Iris samples; returns class id (0,1,2) and label (setosa, versicolor, virginica)."
 )
 def predict(req: PredictRequest) -> PredictResponse:
+    print(req.samples)
+    ids=[]
+    labels=[]
+    for sample in req.samples:
+        result = model.predict([[
+            sample.sepal_length,
+            sample.sepal_width,
+            sample.petal_length,
+            sample.petal_width
+            ]])
+        print(result)
+        ids.append(result[0])
+        labels.append(IRIS_LABELS[result[0]])
     # TODO Run predict
     return PredictResponse(
         class_id=[],
@@ -77,5 +98,44 @@ def predict(req: PredictRequest) -> PredictResponse:
     )
     
 # TODO Add endpoint to get the current model serving version
+@app.get("/version", 
+    response_model=ModelResponse,
+    tags=["health"],
+    summary="Current Model Version",
+    description="Get the Current Model Version"
+    )
+def version():
+    return ModelResponse(
+        model_name=MODEL_NAME,
+        model_version=MODEL_VERSION,
+        model_uri=MODEL_URI
+    )
+    
 # TODO Add endpoint to update the serving version
+@app.post(
+    "/setModelVersion",
+    tags=["prediction"],
+    summary="Set Model Version",
+    description="Set the Model Version for use."
+    )
+def setModelVersion(req: VersionRequest):
+    global MODEL_VERSION, MODEL_URI, model
+    
+    try :
+        TRY_MODEL_VERSION = req.model_version
+        TRY_MODEL_URI = f"models:/{MODEL_NAME}/{TRY_MODEL_VERSION}"
+        model = mlflow.pyfunc.load_model(TRY_MODEL_URI)
+        MODEL_VERSION = req.model_version
+        MODEL_URI = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
+        
+        return ModelResponse(
+            model_name=MODEL_NAME,
+            model_version=MODEL_VERSION,
+            model_uri=MODEL_URI
+        )
+
+    except Exception as e :
+        return {"status": "error", "status message": f"Unable to load model version - {e.message}"}
+    
+    
 # TODO Predict using the correct served version
